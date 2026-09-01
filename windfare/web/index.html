@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Windfare</title>
+<meta name="description" content="A deal feed for flexible travelers. Scroll real trips, watch prices, catch flash sales.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="/">WINDFARE</a>
+      <div class="topbar-actions">
+        <button id="profileBtn" class="chip chip-quiet" type="button" aria-label="Edit trip preferences">
+          <span id="profileHome">···</span>
+        </button>
+        <button id="bellBtn" class="bell" type="button" aria-label="Notifications">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 22a2.4 2.4 0 0 0 2.4-2.4H9.6A2.4 2.4 0 0 0 12 22Zm7-5.5v-1l-1.6-1.7v-4A5.6 5.6 0 0 0 13 4.3V3.4a1 1 0 1 0-2 0v.9a5.6 5.6 0 0 0-4.4 5.5v4L5 15.5v1a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1Z"/></svg>
+          <span id="bellBadge" class="bell-badge" hidden></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="filters" aria-label="Feed filters">
+    <div class="filters-row" id="windowChips">
+      <button class="chip active" data-window="0" type="button">Anytime</button>
+      <button class="chip" data-window="7" type="button">Next week</button>
+      <button class="chip" data-window="14" type="button">2 weeks</button>
+      <button class="chip" data-window="30" type="button">A month</button>
+    </div>
+    <div class="filters-row" id="vibeChips">
+      <button class="chip active" data-vibe="" type="button">All vibes</button>
+      <button class="chip" data-vibe="beach" type="button">Beach</button>
+      <button class="chip" data-vibe="city" type="button">City</button>
+      <button class="chip" data-vibe="ski" type="button">Ski</button>
+      <button class="chip" data-vibe="nature" type="button">Nature</button>
+    </div>
+  </nav>
+
+  <main id="feed" class="feed" aria-live="polite"></main>
+
+  <template id="cardTpl">
+    <article class="card">
+      <div class="card-banner">
+        <span class="kind-pill"></span>
+        <span class="countdown" hidden></span>
+        <div class="banner-route">
+          <span class="banner-codes"></span>
+          <span class="banner-city"></span>
+        </div>
+      </div>
+      <div class="card-body">
+        <p class="headline"></p>
+        <div class="price-row">
+          <div class="price-main">
+            <span class="price"></span>
+            <span class="typical"></span>
+            <span class="pct-pill"></span>
+          </div>
+          <div class="spark" role="img"></div>
+        </div>
+        <p class="dates"></p>
+        <div class="card-actions">
+          <button class="btn btn-watch" type="button">Watch</button>
+          <button class="btn btn-share" type="button">Share</button>
+          <a class="btn btn-book" target="_blank" rel="noopener">Book</a>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <div id="notifDrawer" class="drawer" hidden>
+    <div class="drawer-panel">
+      <div class="drawer-head">
+        <h2>Price alerts</h2>
+        <button id="notifClose" class="chip chip-quiet" type="button">Close</button>
+      </div>
+      <div id="notifList" class="notif-list"></div>
+    </div>
+  </div>
+
+  <div id="onboard" class="drawer" hidden>
+    <div class="drawer-panel">
+      <div class="drawer-head"><h2>Where do you fly from?</h2></div>
+      <form id="onboardForm">
+        <label class="field-label" for="homeSelect">Home airport</label>
+        <select id="homeSelect" required></select>
+        <label class="field-label" for="budgetRange">Trip budget: <strong id="budgetOut">$800</strong></label>
+        <input id="budgetRange" type="range" min="200" max="2000" step="50" value="800">
+        <p class="field-label">What kind of trips?</p>
+        <div class="filters-row" id="onboardVibes">
+          <button class="chip" data-vibe="beach" type="button">Beach</button>
+          <button class="chip" data-vibe="city" type="button">City</button>
+          <button class="chip" data-vibe="ski" type="button">Ski</button>
+          <button class="chip" data-vibe="nature" type="button">Nature</button>
+        </div>
+        <button class="btn btn-book btn-full" type="submit">Show me trips</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
