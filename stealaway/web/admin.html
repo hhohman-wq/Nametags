@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stealaway Revenue</title>
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<style>
+  .admin { max-width: 720px; margin: 0 auto; padding: 12px 16px 60px; }
+  .admin h1 {
+    font-family: var(--display); font-variation-settings: 'wdth' 72;
+    font-weight: 760; font-size: 26px; margin: 18px 0 4px;
+  }
+  .admin .sub { color: var(--ink-soft); margin: 0 0 18px; font-size: 14px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .kpi .label { font-size: 12.5px; color: var(--ink-soft); }
+  .kpi .value {
+    font-family: var(--display); font-variation-settings: 'wdth' 72;
+    font-weight: 750; font-size: 27px; line-height: 1.15; margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .kpi .sub { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-top: 3px; }
+  .kpi.money .value { color: var(--gold); }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-top: 14px; }
+  .panel h2 {
+    font-family: var(--display); font-variation-settings: 'wdth' 78;
+    font-weight: 700; font-size: 16px; margin: 0 0 12px;
+  }
+  .chart-wrap { position: relative; }
+  .chart-tip {
+    position: absolute; pointer-events: none; background: var(--ink); color: var(--ground);
+    font-family: var(--mono); font-size: 11.5px; padding: 5px 9px; border-radius: 7px;
+    transform: translate(-50%, -110%); white-space: nowrap;
+  }
+  .empty { color: var(--ink-faint); font-size: 14px; padding: 18px 0; text-align: center; }
+
+  .cfg { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 0; }
+  .cfg .chip { cursor: default; }
+  .cfg .on { border-color: var(--quick); color: var(--quick); background: var(--quick-wash); }
+  .cfg .off { border-color: var(--line); color: var(--ink-faint); }
+
+  table.routes { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  table.routes th {
+    font-family: var(--display); font-variation-settings: 'wdth' 84; font-weight: 650;
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft);
+    text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--line);
+  }
+  table.routes td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  table.routes tr:last-child td { border-bottom: none; }
+  table.routes td.num { font-family: var(--mono); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+  details.daily { margin-top: 10px; }
+  details.daily summary { font-size: 13px; color: var(--ink-soft); cursor: pointer; }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="/">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#0E6E7E"/><path d="M9 45 Q24 46 36 39" fill="none" stroke="#F2F6F7" stroke-width="5" stroke-linecap="round"/><path d="M12 35 Q25 34 35 29" fill="none" stroke="#F2F6F7" stroke-width="5" stroke-linecap="round" opacity="0.82"/><path d="M17 25 Q27 23 34 20" fill="none" stroke="#F2F6F7" stroke-width="5" stroke-linecap="round" opacity="0.64"/><path d="M39 34 L56 12 L51 36 L44 31 Z" fill="#F2F6F7"/></svg>
+        STEALAWAY</a>
+      <span class="chip chip-quiet">Revenue</span>
+    </div>
+  </header>
+
+  <main class="admin">
+    <h1>Revenue</h1>
+    <p class="sub">Affiliate clicks and Stealaway Pro, live from this instance's database. Estimates use the configured commission rate; the affiliate network's dashboard is the source of truth for payouts.</p>
+
+    <div class="kpis" id="kpis"></div>
+    <div class="cfg" id="cfg"></div>
+
+    <section class="panel">
+      <h2>Booking clicks — last 14 days</h2>
+      <div class="chart-wrap" id="chart"></div>
+      <details class="daily" id="dailyTable"><summary>View as table</summary></details>
+    </section>
+
+    <section class="panel">
+      <h2>Top routes by clicks</h2>
+      <div id="routes"></div>
+    </section>
+  </main>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const money = (v) => '$' + Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 });
+const key = new URLSearchParams(location.search).get('key');
+
+async function load() {
+  const res = await fetch('/api/admin/stats' + (key ? `?key=${encodeURIComponent(key)}` : ''));
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    $('#kpis').innerHTML = `<div class="kpi"><div class="label">Error</div><div class="value" style="font-size:16px"></div></div>`;
+    $('.kpi .value').textContent = err.error || res.statusText;
+    return;
+  }
+  const s = await res.json();
+
+  $('#kpis').innerHTML = '';
+  const tile = (label, value, sub, moneyTile) => {
+    const div = document.createElement('div');
+    div.className = 'kpi' + (moneyTile ? ' money' : '');
+    div.innerHTML = `<div class="label"></div><div class="value"></div><div class="sub"></div>`;
+    $('.label', div).textContent = label;
+    $('.value', div).textContent = value;
+    $('.sub', div).textContent = sub;
+    $('#kpis').append(div);
+  };
+  tile('Booking clicks (7d)', s.affiliate.clicks7d.toLocaleString(), `all-time ${s.affiliate.clicksAll.toLocaleString()}`);
+  tile('Est. affiliate revenue (7d)', money(s.affiliate.estRevenue7d), `all-time ${money(s.affiliate.estRevenueAll)}`, true);
+  tile('Pro subscribers', s.pro.subscribers.toLocaleString(), `collected ${money(s.pro.collectedCents / 100)}`);
+  tile('Pro ARR', money(s.pro.arrCents / 100), '$49 / subscriber / yr', true);
+
+  $('#cfg').innerHTML = '';
+  const cfg = (on, labelOn, labelOff) => {
+    const span = document.createElement('span');
+    span.className = 'chip ' + (on ? 'on' : 'off');
+    span.textContent = on ? labelOn : labelOff;
+    $('#cfg').append(span);
+  };
+  cfg(s.affiliate.configured, 'Affiliate: Travelpayouts marker active', 'Affiliate: set TRAVELPAYOUTS_MARKER to earn on clicks');
+  cfg(s.pro.stripeConfigured, 'Payments: Stripe live', 'Payments: dev mode (set STRIPE_SECRET_KEY)');
+
+  renderChart(s.daily);
+  renderDailyTable(s.daily);
+  renderRoutes(s.topRoutes);
+}
+
+function renderChart(daily) {
+  const wrap = $('#chart');
+  wrap.innerHTML = '';
+  if (!daily.length) {
+    wrap.innerHTML = '<p class="empty">No booking clicks yet. Every tap on Book lands here.</p>';
+    return;
+  }
+  // Fill the last 14 calendar days so gaps read as zero, not missing.
+  const byDay = Object.fromEntries(daily.map((d) => [d.day, d]));
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const day = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    days.push({ day, clicks: byDay[day]?.clicks ?? 0, revenue: byDay[day]?.revenue ?? 0 });
+  }
+  const W = 640, H = 170, padL = 30, padB = 22, padT = 12;
+  const max = Math.max(1, ...days.map((d) => d.clicks));
+  const bw = (W - padL - 8) / days.length;
+  const barW = Math.min(26, bw - 2); // 2px surface gap between bars
+  const y = (v) => padT + (1 - v / max) * (H - padT - padB);
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Booking clicks per day, last 14 days">`;
+  // recessive grid: baseline + one mid line
+  for (const gv of [max, Math.ceil(max / 2)]) {
+    svg += `<line x1="${padL}" x2="${W - 4}" y1="${y(gv)}" y2="${y(gv)}" stroke="var(--line)" stroke-width="1"/>`;
+    svg += `<text x="${padL - 6}" y="${y(gv) + 4}" text-anchor="end" font-size="10" fill="var(--ink-faint)" font-family="IBM Plex Mono,monospace">${gv}</text>`;
+  }
+  svg += `<line x1="${padL}" x2="${W - 4}" y1="${y(0)}" y2="${y(0)}" stroke="var(--ink-faint)" stroke-width="1"/>`;
+  days.forEach((d, i) => {
+    const x = padL + i * bw + (bw - barW) / 2;
+    const h = Math.max(0, y(0) - y(d.clicks));
+    if (d.clicks > 0) {
+      // rounded data-end anchored to the baseline
+      svg += `<path d="M${x} ${y(0)} V${y(d.clicks) + 4} Q${x} ${y(d.clicks)} ${x + 4} ${y(d.clicks)} H${x + barW - 4} Q${x + barW} ${y(d.clicks)} ${x + barW} ${y(d.clicks) + 4} V${y(0)} Z" fill="var(--drop)"/>`;
+    }
+    // oversized hit target for hover
+    svg += `<rect class="hit" data-i="${i}" x="${padL + i * bw}" y="0" width="${bw}" height="${H - padB}" fill="transparent"/>`;
+    if (i % 2 === 0) {
+      const label = d.day.slice(5).replace('-', '/');
+      svg += `<text x="${x + barW / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--ink-faint)" font-family="IBM Plex Mono,monospace">${label}</text>`;
+    }
+    void h;
+  });
+  svg += '</svg>';
+  wrap.innerHTML = svg;
+
+  const tip = document.createElement('div');
+  tip.className = 'chart-tip';
+  tip.hidden = true;
+  wrap.append(tip);
+  wrap.addEventListener('mousemove', (e) => {
+    const hit = e.target.closest('.hit');
+    if (!hit) { tip.hidden = true; return; }
+    const d = days[Number(hit.dataset.i)];
+    tip.textContent = `${d.day} · ${d.clicks} click${d.clicks === 1 ? '' : 's'} · ${money(d.revenue)}`;
+    tip.style.left = e.offsetX + 'px';
+    tip.style.top = Math.max(24, e.offsetY) + 'px';
+    tip.hidden = false;
+  });
+  wrap.addEventListener('mouseleave', () => { tip.hidden = true; });
+}
+
+function renderDailyTable(daily) {
+  const det = $('#dailyTable');
+  if (!daily.length) { det.hidden = true; return; }
+  const rows = daily.map((d) => `<tr><td>${d.day}</td><td class="num">${d.clicks}</td><td class="num">${money(d.revenue)}</td></tr>`).join('');
+  det.insertAdjacentHTML('beforeend',
+    `<table class="routes"><thead><tr><th>Day</th><th style="text-align:right">Clicks</th><th style="text-align:right">Est. revenue</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+
+function renderRoutes(routes) {
+  const el = $('#routes');
+  if (!routes.length) {
+    el.innerHTML = '<p class="empty">No clicks recorded yet.</p>';
+    return;
+  }
+  const rows = routes.map((r) =>
+    `<tr><td>${r.origin} → ${r.dest_city} (${r.dest})</td><td class="num">${r.clicks}</td><td class="num">${money(r.revenue)}</td></tr>`
+  ).join('');
+  el.innerHTML = `<table class="routes"><thead><tr><th>Route</th><th style="text-align:right">Clicks</th><th style="text-align:right">Est. revenue</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+load();
+setInterval(load, 30000);
+</script>
+</body>
+</html>

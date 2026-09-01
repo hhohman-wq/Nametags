@@ -1,0 +1,16 @@
+{
+  "name": "stealaway",
+  "version": "0.1.0",
+  "description": "Stealaway — a deal feed for flexible travelers. Scroll real trips, watch prices, catch flash sales.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "STEALAWAY_POLL_MS=15000 node server/index.js",
+    "seed": "node server/seed.js",
+    "test": "node --test 'test/*.test.js'"
+  }
+}
