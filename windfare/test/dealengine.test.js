@@ -7,9 +7,9 @@ import { percentile, routeStats, classifyQuote, ingestQuotes, expireDeals } from
 import { MockFareProvider } from '../server/provider.js';
 import { pollOnce, fireWatchAlerts } from '../server/poller.js';
 
-function freshDb() {
+async function freshDb() {
   const db = openDb(':memory:');
-  seed(db, { seedNum: 7 });
+  await seed(db, { seedNum: 7, originLimit: 4 });
   return db;
 }
 
@@ -20,8 +20,8 @@ test('percentile interpolates correctly', () => {
   assert.ok(Number.isNaN(percentile([], 0.5)));
 });
 
-test('seed produces routes, history, and live deals', () => {
-  const db = freshDb();
+test('seed produces routes, history, and live deals', async () => {
+  const db = await freshDb();
   assert.ok(db.prepare('SELECT COUNT(*) AS n FROM routes').get().n > 100);
   assert.ok(db.prepare('SELECT COUNT(*) AS n FROM price_obs').get().n > 10000);
   const stats = routeStats(db, 1);
@@ -40,8 +40,8 @@ test('classifyQuote flags anomalies and flash sales, ignores normal fares', () =
   assert.equal(classifyQuote({ price: 100, isSale: true }, { count: 5, median: 500, p10: 400 }), null);
 });
 
-test('ingestQuotes records history and creates at most one active deal per departure', () => {
-  const db = freshDb();
+test('ingestQuotes records history and creates at most one active deal per departure', async () => {
+  const db = await freshDb();
   const route = db.prepare('SELECT id, origin, dest, base_price FROM routes WHERE id = 1').get();
   const stats = routeStats(db, route.id);
   const cheap = Math.round(stats.p10 * 0.8);
@@ -60,8 +60,8 @@ test('ingestQuotes records history and creates at most one active deal per depar
   assert.equal(active.n, 1);
 });
 
-test('expireDeals kills timed-out flash sales', () => {
-  const db = freshDb();
+test('expireDeals kills timed-out flash sales', async () => {
+  const db = await freshDb();
   const res = db.prepare(
     `INSERT INTO deals (route_id, type, price, typical, pct_below, depart_date, return_date, expires_at, created_at, active)
      VALUES (1, 'flash', 200, 400, 50, '2026-10-01', '2026-10-06', ?, ?, 1)`
@@ -71,8 +71,8 @@ test('expireDeals kills timed-out flash sales', () => {
   assert.equal(row.active, 0);
 });
 
-test('watch fires a notification when price crosses threshold, then de-dupes', () => {
-  const db = freshDb();
+test('watch fires a notification when price crosses threshold, then de-dupes', async () => {
+  const db = await freshDb();
   db.prepare("INSERT INTO users (id, home, budget, vibes, created_at) VALUES ('u1', 'JFK', 800, '[]', ?)").run(
     new Date().toISOString()
   );
@@ -88,11 +88,37 @@ test('watch fires a notification when price crosses threshold, then de-dupes', (
   assert.equal(fireWatchAlerts(db), 0);
 });
 
-test('pollOnce runs end to end and keeps history growing', () => {
-  const db = freshDb();
+test('pollOnce runs all providers end to end and keeps history growing', async () => {
+  const db = await freshDb();
   const before = db.prepare('SELECT COUNT(*) AS n FROM price_obs').get().n;
-  const provider = new MockFareProvider({ seed: 99 });
-  const res = pollOnce(db, provider);
+  const providers = [new MockFareProvider({ seed: 99 })];
+  const res = await pollOnce(db, providers);
   assert.ok(db.prepare('SELECT COUNT(*) AS n FROM price_obs').get().n > before);
-  assert.ok(res.dealsCreated >= 0);
+  assert.equal(res.errors, 0);
+});
+
+test('a failing provider does not kill the poll pass', async () => {
+  const db = await freshDb();
+  const broken = {
+    name: 'broken',
+    batchSize: 5,
+    quotes: async () => { throw new Error('boom'); }
+  };
+  const res = await pollOnce(db, [broken, new MockFareProvider({ seed: 3 })]);
+  assert.ok(res.errors > 0);
+  assert.ok(res.dealsCreated >= 0); // mock still ran
+});
+
+test('rate-limited providers get a rotating batch of routes', async () => {
+  const db = await freshDb();
+  const asked = [];
+  const tiny = {
+    name: 'tiny',
+    batchSize: 3,
+    quotes: async (route) => { asked.push(route.id); return []; }
+  };
+  await pollOnce(db, [tiny]);
+  await pollOnce(db, [tiny]);
+  assert.equal(asked.length, 6);
+  assert.equal(new Set(asked).size, 6, 'second tick advances to fresh routes');
 });

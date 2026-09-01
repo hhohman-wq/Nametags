@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 
 import { buildApp } from '../server/index.js';
 import { MockFareProvider } from '../server/provider.js';
+import { seed } from '../server/seed.js';
+import { openDb } from '../server/db.js';
 
 async function withServer(fn) {
-  const { server, db } = buildApp({ dbPath: ':memory:', provider: new MockFareProvider({ seed: 7 }) });
+  const db = openDb(':memory:');
+  await seed(db, { seedNum: 7, originLimit: 4 });
+  const { server } = await buildApp({ dbPath: undefined, db, providers: [new MockFareProvider({ seed: 7 })] });
   await new Promise((r) => server.listen(0, r));
   const base = `http://localhost:${server.address().port}`;
   try {
@@ -39,23 +43,23 @@ test('health and airports', () =>
 test('user creation validates home airport', () =>
   withServer(async (base) => {
     assert.equal((await post(base, '/api/users', {})).status, 400);
-    const { status, body } = await post(base, '/api/users', { home: 'DEN', budget: 650, vibes: ['ski'] });
+    const { status, body } = await post(base, '/api/users', { home: 'BOS', budget: 650, vibes: ['ski'] });
     assert.equal(status, 200);
     assert.ok(body.id);
-    assert.equal(body.home, 'DEN');
+    assert.equal(body.home, 'BOS');
   }));
 
 test('feed returns ranked cards scoped to the home airport', () =>
   withServer(async (base) => {
-    const user = (await post(base, '/api/users', { home: 'DEN', budget: 900, vibes: ['ski'] })).body;
+    const user = (await post(base, '/api/users', { home: 'BOS', budget: 900, vibes: ['ski'] })).body;
     const feed = (await get(base, `/api/feed?user=${user.id}`)).body;
-    assert.equal(feed.home, 'DEN');
+    assert.equal(feed.home, 'BOS');
     assert.ok(feed.cards.length > 0, 'seed should leave live cards in the feed');
     for (const c of feed.cards) {
-      assert.equal(c.origin, 'DEN');
+      assert.equal(c.origin, 'BOS');
       assert.ok(['flash', 'anomaly', 'quick'].includes(c.kind));
       assert.ok(c.trend.length >= 2, 'cards carry sparkline data');
-      assert.ok(c.bookUrl.startsWith('https://www.google.com/travel/flights'));
+      assert.ok(c.bookUrl.startsWith('/go?'), 'booking is a tracked handoff');
     }
     const scores = feed.cards.map((c) => c.score);
     assert.deepEqual(scores, [...scores].sort((a, b) => b - a), 'cards are ranked');

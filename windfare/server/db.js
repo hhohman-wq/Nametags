@@ -56,7 +56,33 @@ CREATE TABLE IF NOT EXISTS users (
   home       TEXT NOT NULL,
   budget     INTEGER NOT NULL DEFAULT 800,
   vibes      TEXT NOT NULL DEFAULT '[]',
+  pro        INTEGER NOT NULL DEFAULT 0,
+  pro_since  TEXT,
   created_at TEXT NOT NULL
+);
+
+-- Revenue: every outbound booking click, with its estimated commission.
+CREATE TABLE IF NOT EXISTS clicks (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id        TEXT,
+  deal_id        INTEGER,
+  route_id       INTEGER NOT NULL,
+  price          REAL NOT NULL,
+  est_commission REAL NOT NULL,
+  target         TEXT NOT NULL,     -- affiliate network the click went to
+  created_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_clicks_time ON clicks(created_at);
+
+-- Revenue: Windfare Pro payments (Stripe in production, 'dev' locally).
+CREATE TABLE IF NOT EXISTS payments (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  kind         TEXT NOT NULL DEFAULT 'pro_year',
+  processor    TEXT NOT NULL,
+  external_id  TEXT,
+  created_at   TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS watches (
@@ -88,5 +114,13 @@ export function openDb(path = DEFAULT_DB_PATH) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Additive migrations for databases created before a column existed.
+function migrate(db) {
+  const usersCols = db.prepare("SELECT name FROM pragma_table_info('users')").all().map((c) => c.name);
+  if (!usersCols.includes('pro')) db.exec("ALTER TABLE users ADD COLUMN pro INTEGER NOT NULL DEFAULT 0");
+  if (!usersCols.includes('pro_since')) db.exec('ALTER TABLE users ADD COLUMN pro_since TEXT');
 }

@@ -21,7 +21,12 @@ function saveUser(u) {
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err = new Error(body.error || res.statusText);
+    err.code = body.code;
+    throw err;
+  }
   return res.json();
 }
 
@@ -113,7 +118,10 @@ function renderCard(deal) {
         setWatchUi(true);
         toast(`Watching — we'll alert you under $${res.threshold}`);
       }
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      if (e.code === 'upgrade_required') openProSheet(e.message);
+      else toast(e.message);
+    }
   });
 
   $('.btn-share', node).addEventListener('click', async () => {
@@ -142,7 +150,19 @@ async function loadFeed() {
   const data = await api(`/api/feed?${params}`);
 
   $('#profileHome').textContent = `${data.home} · $${data.budget}`;
+  $('#proBadge').hidden = !data.pro;
   feedEl.replaceChildren();
+
+  if (!data.pro && data.lockedCount > 0) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'card-locked';
+    btn.innerHTML = `<div><span class="lock-kicker">PRO EARLY ACCESS</span><strong></strong> just landed. Pro members see rare fares 60 minutes before everyone else.</div>`;
+    $('strong', btn).textContent = data.lockedCount === 1 ? 'A rare fare' : `${data.lockedCount} rare fares`;
+    btn.addEventListener('click', () => openProSheet());
+    feedEl.append(btn);
+  }
+
   if (data.cards.length === 0) {
     const p = document.createElement('p');
     p.className = 'feed-empty';
@@ -268,6 +288,35 @@ $('#onboardForm').addEventListener('submit', async (e) => {
   } catch (err) { toast(err.message); }
 });
 
+/* ---------- Windfare Pro ---------- */
+function openProSheet(reason) {
+  if (reason) toast(reason);
+  $('#proSheet').hidden = false;
+}
+$('#proBadge').addEventListener('click', () => openProSheet());
+$('#proClose').addEventListener('click', () => { $('#proSheet').hidden = true; });
+$('#proSheet').addEventListener('click', (e) => { if (e.target.id === 'proSheet') e.currentTarget.hidden = true; });
+
+$('#proUpgrade').addEventListener('click', async () => {
+  if (!state.user) return openOnboarding();
+  const btn = $('#proUpgrade');
+  btn.disabled = true;
+  try {
+    const res = await api('/api/billing/checkout', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ user: state.user.id })
+    });
+    if (res.url) {
+      location.href = res.url; // Stripe Checkout
+    } else {
+      $('#proSheet').hidden = true;
+      toast('Windfare Pro is active. Rare fares now land instantly.');
+      await loadFeed();
+    }
+  } catch (e) { toast(e.message); } finally { btn.disabled = false; }
+});
+
 /* ---------- toast ---------- */
 let toastTimer;
 function toast(msg) {
@@ -280,6 +329,10 @@ function toast(msg) {
 
 /* ---------- boot ---------- */
 (async function boot() {
+  if (new URLSearchParams(location.search).get('upgraded') === '1') {
+    toast('Windfare Pro is active. Rare fares now land instantly.');
+    history.replaceState(null, '', '/');
+  }
   if (!state.user) {
     await openOnboarding();
     await loadFeed(); // default JFK feed behind the onboarding sheet

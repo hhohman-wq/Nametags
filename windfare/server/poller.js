@@ -1,20 +1,45 @@
-// The heartbeat: poll fares for every route, record history, detect deals,
-// and fire watch alerts. In production this is a scheduled worker with an API
-// cost budget; in the MVP it's a setInterval over the mock provider.
+// The heartbeat: poll fares from every active provider, record history,
+// detect deals, and fire watch alerts. Real providers are rate-limited, so
+// each gets a round-robin batch of routes per tick (provider.batchSize);
+// the mock covers the whole matrix every time.
 
 import { ingestQuotes, expireDeals, routeStats } from './dealengine.js';
 
-export function pollOnce(db, provider, { now = Date.now() } = {}) {
+const cursors = new WeakMap(); // provider -> next route index
+
+function batchFor(provider, routes) {
+  if (!(provider.batchSize < routes.length)) return routes;
+  const start = cursors.get(provider) ?? 0;
+  const batch = [];
+  for (let i = 0; i < provider.batchSize; i++) {
+    batch.push(routes[(start + i) % routes.length]);
+  }
+  cursors.set(provider, (start + provider.batchSize) % routes.length);
+  return batch;
+}
+
+export async function pollOnce(db, providers, { now = Date.now(), log = () => {} } = {}) {
+  const list = Array.isArray(providers) ? providers : [providers];
   const routes = db.prepare('SELECT id, origin, dest, base_price FROM routes').all();
-  let created = [];
-  for (const r of routes) {
-    created = created.concat(
-      ingestQuotes(db, r, provider.quotes(r), { now }).map((d) => ({ ...d, routeId: r.id }))
-    );
+  let dealsCreated = 0;
+  let errors = 0;
+
+  for (const provider of list) {
+    for (const route of batchFor(provider, routes)) {
+      try {
+        const quotes = await provider.quotes(route);
+        if (quotes.length > 0) {
+          dealsCreated += ingestQuotes(db, route, quotes, { now }).length;
+        }
+      } catch (err) {
+        errors++;
+        if (errors <= 3) log(`${provider.name} ${route.origin}→${route.dest}: ${err.message}`);
+      }
+    }
   }
   expireDeals(db, { now });
   const alerts = fireWatchAlerts(db, { now });
-  return { dealsCreated: created.length, alerts };
+  return { dealsCreated, alerts, errors };
 }
 
 // A watch alerts when the route's freshest fare crosses the user's threshold,
@@ -58,13 +83,18 @@ export function fireWatchAlerts(db, { now = Date.now() } = {}) {
   return fired;
 }
 
-export function startPolling(db, provider, { intervalMs = 60000, log = () => {} } = {}) {
-  const tick = () => {
+export function startPolling(db, providers, { intervalMs = 60000, log = () => {} } = {}) {
+  let running = false;
+  const tick = async () => {
+    if (running) return; // a slow provider pass must not overlap the next
+    running = true;
     try {
-      const res = pollOnce(db, provider);
-      log(`poll: +${res.dealsCreated} deals, ${res.alerts} alerts`);
+      const res = await pollOnce(db, providers, { log });
+      log(`poll: +${res.dealsCreated} deals, ${res.alerts} alerts${res.errors ? `, ${res.errors} provider errors` : ''}`);
     } catch (err) {
       log(`poll failed: ${err.message}`);
+    } finally {
+      running = false;
     }
   };
   const timer = setInterval(tick, intervalMs);

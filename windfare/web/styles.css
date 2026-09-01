@@ -12,13 +12,15 @@
   --accent-strong: #0A5561;
   --accent-wash: #DFEDEF;
   --on-accent: #FFFFFF;
-  --flash: #A35D06;
+  --gold: #B35F00;
+  --gold-wash: #F7ECD9;
+  --flash: #B35F00;
   --flash-wash: #F7ECD9;
-  --rare: #7A3E82;
+  --rare: #8A3D93;
   --rare-wash: #F1E4F2;
-  --quick: #2C6E49;
+  --quick: #1E8352;
   --quick-wash: #E1EFE6;
-  --drop: #0E6E7E;
+  --drop: #0083A8;
   --spark-muted: #A7BEC6;
   --shadow: 0 1px 3px rgba(23, 36, 46, 0.08);
   --display: 'Archivo', system-ui, sans-serif;
@@ -37,13 +39,15 @@
     --accent-strong: #7ECbd9;
     --accent-wash: #123039;
     --on-accent: #06272E;
-    --flash: #E0A24F;
+    --gold: #C87F1B;
+    --gold-wash: #33270F;
+    --flash: #C87F1B;
     --flash-wash: #33270F;
-    --rare: #CE8FD6;
-    --rare-wash: #34203a;
-    --quick: #74BD91;
+    --rare: #B863C6;
+    --rare-wash: #34203A;
+    --quick: #33A163;
     --quick-wash: #16301F;
-    --drop: #53B7C8;
+    --drop: #14A0B8;
     --spark-muted: #47606C;
     --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
@@ -77,7 +81,9 @@ body {
   font-variation-settings: 'wdth' 68;
   font-weight: 780; font-size: 21px; letter-spacing: 0.04em;
   color: var(--accent); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 8px;
 }
+.wordmark svg { width: 26px; height: 26px; border-radius: 7px; flex: 0 0 auto; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 .bell {
   position: relative; border: 1px solid var(--line); background: var(--panel);
@@ -180,6 +186,29 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .btn-book { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn-watch.watching { background: var(--accent-wash); border-color: var(--accent); color: var(--accent-strong); }
 .btn-full { width: 100%; margin-top: 18px; }
+
+/* ---- Pro (windfall gold — gold only ever means money) ---- */
+.pro-badge {
+  background: var(--gold-wash); border-color: var(--gold); color: var(--gold);
+  font-variation-settings: 'wdth' 84; letter-spacing: 0.08em; font-size: 11px; padding: 5px 10px;
+}
+.btn-gold { background: var(--gold); border-color: var(--gold); color: #FFF8EE; }
+.pro-price { font-family: var(--display); font-size: 17px; margin: 0 0 10px; }
+.pro-price strong { font-size: 34px; font-variation-settings: 'wdth' 72; font-weight: 760; }
+.pro-benefits { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.pro-benefits li { line-height: 1.45; }
+.pro-fine { color: var(--ink-faint); font-size: 13px; margin: 12px 0 0; }
+
+.card-locked {
+  border: 1px dashed var(--gold); border-radius: 14px; background: var(--gold-wash);
+  padding: 16px 18px; display: flex; align-items: center; gap: 14px; cursor: pointer; text-align: left;
+  font-family: var(--body); font-size: 15px; color: var(--ink); width: 100%;
+}
+.card-locked .lock-kicker {
+  font-family: var(--display); font-variation-settings: 'wdth' 84; font-weight: 700;
+  font-size: 11px; letter-spacing: 0.1em; color: var(--gold); display: block; margin-bottom: 3px;
+}
+.card-locked strong { font-weight: 650; }
 
 /* ---- drawers ---- */
 .drawer {

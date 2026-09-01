@@ -13,7 +13,7 @@ npm test           # deal engine + API test suite
 npm run seed       # rebuild market data (preserves users/watches)
 ```
 
-On first launch the app seeds 12 origin airports, 30 destinations, ~130 routes, and 90 days of synthetic fare history, then runs a few poll passes so the feed opens with live flash sales and rare-fare anomalies.
+On first launch the app seeds 20 origin airports, ~90 destinations worldwide, ~1,200 routes, and 90 days of synthetic fare history, then runs a few poll passes so the feed opens with live flash sales and rare-fare anomalies. Add real-fare API keys (below) and real quotes flow through the same pipeline.
 
 ## What's in the MVP
 
@@ -22,7 +22,12 @@ On first launch the app seeds 12 origin airports, 30 destinations, ~130 routes, 
 - **Price watching** — watch any card; the default alert threshold is 10% under the route's typical price. Alerts de-dupe (re-fires only on a further 2% improvement) and land in the in-app alerts drawer.
 - **Sparklines** — each card charts its last 12 observed fares.
 - **Share** — every detected deal has a server-rendered share page at `/deal/:id` with OG tags.
-- **Booking handoff** — "Book" deep-links into Google Flights (swap for tagged affiliate links).
+- **Tracked booking handoff** — every Book click routes through `/go`, is recorded with an estimated commission, and redirects to the affiliate target.
+- **Revenue, built in** —
+  - *Affiliate:* set `TRAVELPAYOUTS_MARKER` and Book clicks go to Aviasales tagged with your marker (flights pay ~1.1–2.2% of ticket value). Without it, clicks hand off untagged and are recorded at $0 — the dashboard tells you what to configure.
+  - *Windfare Pro ($49/yr):* free members get 3 watches and see rare fares 60 minutes late; Pro gets unlimited watches and rare fares the moment they land. Stripe Checkout when `STRIPE_SECRET_KEY`/`STRIPE_PRICE_ID` are set (webhook at `/api/billing/webhook`, signature-verified); dev mode grants Pro instantly so the flow is demoable.
+  - *Revenue dashboard at `/admin`* — clicks, estimated affiliate revenue, Pro subscribers, ARR, daily click chart, top routes. Protect it with `WINDFARE_ADMIN_KEY`.
+- **Brand kit** — `brand/BRAND.md`: palette (CVD-validated chart colors), Archivo/Plex Mono type system, the gust-mark logo, voice rules.
 
 ## Architecture
 
@@ -38,18 +43,20 @@ web/            Zero-framework mobile-first frontend
 test/           node:test suite (engine + API)
 ```
 
-The mock provider exists so the entire loop runs with no API keys. To go live with real fares, implement `DuffelProvider.quotes()` (`server/provider.js`) and set `DUFFEL_API_KEY` — nothing else changes, because the poller and deal engine only speak the provider interface.
+### Fare providers
+
+Providers implement one interface (`async quotes(route)` + `batchSize`); the poller round-robins rate-limited providers through the route matrix and any provider error is logged, never fatal. Active providers stack:
+
+| Provider | Activates with | What it brings |
+|---|---|---|
+| **Duffel** (`server/providers/duffel.js`) | `DUFFEL_API_KEY` | Live bookable flight offers; searches are free, a test key returns realistic data. Also the Phase-2 native checkout path |
+| **Travelpayouts** (`server/providers/travelpayouts.js`) | `TRAVELPAYOUTS_TOKEN` | Cached real fares actually found by Aviasales users — broad, cheap, deal-shaped. Same account supplies the affiliate marker |
+| **Mock** | no keys, or `WINDFARE_USE_MOCK=1` | Realistic price walks + sale events so everything runs with zero keys |
 
 ### Environment
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | `4600` | HTTP port |
-| `WINDFARE_DB` | `windfare.db` (app root) | SQLite path (`:memory:` works) |
-| `WINDFARE_POLL_MS` | `60000` | Fare polling interval |
-| `WINDFARE_SEED` | `42` | Mock provider RNG seed |
-| `DUFFEL_API_KEY` | — | Switches to the (stub) Duffel provider |
+See `.env.example` for the full annotated list: server settings, provider keys, the affiliate marker + commission rate, Stripe keys, and the admin key.
 
 ## What's deliberately not here yet
 
-Per the PRD's phasing: real fare data (Duffel), payments/native checkout, push notifications (alerts are in-app only), accounts/auth (per-browser profile), the paid Deal Watch Pro tier, hotels, and cruises.
+Per the PRD's phasing: native checkout via Duffel Orders (search is wired; ordering is not), push notifications (alerts are in-app only), accounts/auth (per-browser profile), hotels, cruises, and the price-freeze fintech layer.

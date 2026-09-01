@@ -1,7 +1,15 @@
-// Fare providers. The MVP ships with a mock provider that produces realistic
-// price movement (random walk + occasional sale events) so the whole loop —
-// polling, history, deal detection, alerts — runs end-to-end with no API keys.
-// DuffelProvider is the Phase-2 integration point; same interface.
+// Fare providers and the provider registry.
+//
+// Every provider implements: `async quotes(route)` returning
+//   [{ departDate, returnDate, price, isSale, saleUntil }]
+// plus `name` and `batchSize` (max routes it should be asked about per poll
+// tick — real APIs are rate- and cost-limited; the poller round-robins).
+//
+// Real providers activate themselves from env keys (see .env.example). With
+// no keys configured the mock keeps the whole loop running end-to-end.
+
+import { DuffelProvider } from './providers/duffel.js';
+import { TravelpayoutsProvider } from './providers/travelpayouts.js';
 
 // Deterministic PRNG so tests can pin behavior.
 export function mulberry32(seed) {
@@ -23,6 +31,9 @@ export function isoDate(ms) {
 }
 
 export class MockFareProvider {
+  name = 'mock';
+  batchSize = Infinity;
+
   constructor({ seed = 42, now = () => Date.now() } = {}) {
     this.rand = mulberry32(seed);
     this.now = now;
@@ -38,8 +49,7 @@ export class MockFareProvider {
     return s;
   }
 
-  // Returns [{departDate, returnDate, price, isSale}] for one route "now".
-  quotes(route) {
+  async quotes(route) {
     const s = this.#routeState(`${route.origin}-${route.dest}`);
     const now = this.now();
 
@@ -47,9 +57,9 @@ export class MockFareProvider {
     s.drift += (1 - s.drift) * 0.05 + (this.rand() - 0.5) * 0.08;
     s.drift = Math.min(1.6, Math.max(0.62, s.drift));
 
-    // Sale lifecycle: ~2.5% chance per poll to start a 2–36h sale, 25–55% off.
+    // Sale lifecycle: ~1.5% chance per poll to start a 2–36h sale, 25–55% off.
     if (s.sale && s.sale.until < now) s.sale = null;
-    if (!s.sale && this.rand() < 0.025) {
+    if (!s.sale && this.rand() < 0.015) {
       s.sale = {
         until: now + (2 + this.rand() * 34) * 3600000,
         depth: 0.45 + this.rand() * 0.3 // price multiplier 0.45–0.75
@@ -58,7 +68,6 @@ export class MockFareProvider {
 
     return DEPART_OFFSETS.map((days) => {
       const departMs = now + days * DAY;
-      // Closer departures price higher; small per-bucket noise.
       const closeness = days < 10 ? 1.15 : days < 21 ? 1.0 : 0.92;
       let price = route.base_price * s.drift * closeness * (0.94 + this.rand() * 0.12);
       const isSale = Boolean(s.sale);
@@ -74,22 +83,15 @@ export class MockFareProvider {
   }
 }
 
-// Phase 2: real fares via Duffel (https://duffel.com). Same interface as the
-// mock so the poller and deal engine don't change. Requires DUFFEL_API_KEY.
-export class DuffelProvider {
-  constructor(apiKey = process.env.DUFFEL_API_KEY) {
-    if (!apiKey) throw new Error('DuffelProvider requires DUFFEL_API_KEY');
-    this.apiKey = apiKey;
+// Active providers, from env. Real ones stack; the mock joins only when no
+// real provider is configured (or when WINDFARE_USE_MOCK=1 forces it in, so
+// a dev box with real keys still gets a lively feed).
+export function createProviders(env = process.env) {
+  const providers = [];
+  if (env.DUFFEL_API_KEY) providers.push(new DuffelProvider(env.DUFFEL_API_KEY));
+  if (env.TRAVELPAYOUTS_TOKEN) providers.push(new TravelpayoutsProvider(env.TRAVELPAYOUTS_TOKEN));
+  if (providers.length === 0 || env.WINDFARE_USE_MOCK === '1') {
+    providers.push(new MockFareProvider({ seed: Number(env.WINDFARE_SEED) || 42 }));
   }
-
-  async quotes(_route) {
-    // Sketch: POST /air/offer_requests with slices for each DEPART_OFFSET,
-    // map the cheapest offer per bucket to {departDate, returnDate, price}.
-    throw new Error('DuffelProvider not implemented in MVP — use MockFareProvider');
-  }
-}
-
-export function createProvider() {
-  if (process.env.DUFFEL_API_KEY) return new DuffelProvider();
-  return new MockFareProvider({ seed: Number(process.env.WINDFARE_SEED) || 42 });
+  return providers;
 }
