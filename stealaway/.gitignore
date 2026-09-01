@@ -1,4 +1,4 @@
 node_modules/
-stealaway.db
-stealaway.db-wal
-stealaway.db-shm
+*.db
+*.db-wal
+*.db-shm
